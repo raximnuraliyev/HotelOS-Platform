@@ -247,11 +247,11 @@ The portals will start on the following ports:
 ## 6. Testing Guide
 
 ### Running Automated Integration Tests
-An automated test runner is provided to run end-to-end integration scenarios. It verifies check-ins, checkout billing calculations, cleaning timer states, maintenance locking, and double-booking protections.
+An automated test runner written in C# (.NET 10) is provided to run end-to-end integration scenarios. It verifies check-ins, checkout billing calculations, cleaning timer states, maintenance locking, and double-booking protections.
 
-In a separate terminal, run:
+From the root of the project, run:
 ```bash
-python test_runner.py
+dotnet run --project dotnet/HotelOS.TestRunner
 ```
 
 ### Scenarios Tested
@@ -263,3 +263,23 @@ python test_runner.py
 6. **TS-06**: Proves double-booking transactional safety by running simultaneous check-ins on a single clean room.
 7. **TS-07**: Gracefully blocks check-in with a validation error when no rooms are available.
 8. **TS-08**: Validates check-in request schema values (blocks invalid types, nights out of range, etc.).
+
+---
+
+## 7. Git Commit History
+
+Exported history of the project's development commits:
+
+```text
+3ad1d9b docs: append exported git log history to README
+aae7d84 docs: add Message Broker Event Catalog table to README
+f0b3ef3 cleanup: delete legacy python run_dashboard.py and test_runner.py scripts
+eec5b15 cleanup: delete unused Python backend directory
+5a50696 feat: implement HTTP requests and TS-01 to TS-08 test logic in C# TestRunner
+cc7942d feat: add C# TestRunner project configuration to solution
+fd4c457 fix: pre-build solution sequentially and run services with --no-build
+dae5577 fix: clean up locked dotnet/compiler processes automatically on start
+3dbd1d2 docs: add comprehensive Minimal API endpoints documentation to README
+9569055 feat: complete C# .NET microservices migration and portal fixes
+```
+
