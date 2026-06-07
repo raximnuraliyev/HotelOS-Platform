@@ -36,6 +36,14 @@ try {
 }
 
 Write-Host ""
+Write-Host "[BUILD] Pre-building the solution to prevent concurrent compilation locks..." -ForegroundColor Yellow
+dotnet build "$basePath\HotelOS.slnx"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[ERROR] Build failed! Please resolve build errors first." -ForegroundColor Red
+    Exit 1
+}
+
+Write-Host ""
 Write-Host "Starting microservices..." -ForegroundColor Yellow
 Write-Host ""
 
@@ -44,7 +52,7 @@ foreach ($svc in $services) {
     Start-Process powershell -ArgumentList @(
         "-NoExit",
         "-Command",
-        "cd '$($svc.Path)'; Write-Host '=== HotelOS $($svc.Name) Service (Port $($svc.Port)) ===' -ForegroundColor Green; dotnet run"
+        "cd '$($svc.Path)'; Write-Host '=== HotelOS $($svc.Name) Service (Port $($svc.Port)) ===' -ForegroundColor Green; dotnet run --no-build"
     )
     Start-Sleep -Seconds 1
 }
