@@ -1,0 +1,27 @@
+{
+  "name": "hotelos-monorepo",
+  "private": true,
+  "workspaces": [
+    "frontend/operations",
+    "frontend/guest",
+    "frontend/landing",
+    "frontend/receptionist",
+    "frontend/housekeeper",
+    "frontend/maintenance",
+    "frontend/kitchen"
+  ],
+  "scripts": {
+    "dev:operations": "npm run dev --workspace=frontend/operations",
+    "dev:guest": "npm run dev --workspace=frontend/guest",
+    "dev:landing": "npm run dev --workspace=frontend/landing",
+    "dev:receptionist": "npm run dev --workspace=frontend/receptionist",
+    "dev:housekeeper": "npm run dev --workspace=frontend/housekeeper",
+    "dev:maintenance": "npm run dev --workspace=frontend/maintenance",
+    "dev:kitchen": "npm run dev --workspace=frontend/kitchen",
+    "dev": "concurrently \"npm run dev:operations\" \"npm run dev:guest\" \"npm run dev:landing\" \"npm run dev:receptionist\" \"npm run dev:housekeeper\" \"npm run dev:maintenance\" \"npm run dev:kitchen\"",
+    "install:all": "npm install"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

@@ -1,0 +1,211 @@
+# HotelOS – Real-Time Event-Driven Hotel Operations System (.NET Core Microservices)
+
+HotelOS is a real-time, event-driven hotel operations platform built using a modern microservices architecture. It simulates hotel workflows including guest check-in/out, automated room assignment, billing, housekeeping tasks, room service ordering, and maintenance priority dispatching. 
+
+The application utilizes **ASP.NET Core Web API (Minimal APIs)** for microservices, **React** for user portals, **Redis Pub/Sub** for event brokering, **StackExchange.Redis** for Redis integration, **Entity Framework Core (EF Core)** for database operations, and **WebSockets (ASP.NET Core SignalR)** for streaming real-time notifications to client portals.
+
+---
+
+## 1. System Architecture
+
+HotelOS consists of 5 independent C# backend microservices and 7 frontend portals structured in an npm Workspaces monorepo. Services communicate asynchronously through the Redis Pub/Sub message broker to remain decoupled, and share an SQLite database configured in WAL mode for high-concurrency data persistence.
+
+```mermaid
+graph TD
+    %% Portals
+    subgraph ClientPortals [Frontend Portals]
+        Landing[Landing Page - Port 3002]
+        Operations[Operations Dashboard - Port 3000]
+        Guest[Guest Room Portal - Port 3001]
+        Receptionist[Receptionist Terminal - Port 3003]
+        Housekeeper[Housekeeper Dashboard - Port 3004]
+        MaintenancePortal[Maintenance Terminal - Port 3005]
+        Kitchen[Kitchen Dashboard - Port 3006]
+    end
+
+    %% Services
+    subgraph Microservices [.NET Core Backend Services]
+        Reception[Reception Service - Port 8001]
+        Housekeeping[Housekeeping Service - Port 8002]
+        RoomService[Room Service - Port 8003]
+        Maintenance[Maintenance Service - Port 8004]
+        Gateway[Notification Gateway - Port 8005]
+    end
+
+    %% Storage & Broker
+    Broker[(Redis Pub/Sub)]
+    DB[(SQLite Database - hotelOS.db)]
+
+    %% Links
+    Landing -->|Navigate| Operations
+    Landing -->|Navigate| Guest
+    Landing -->|Navigate| Receptionist
+    Landing -->|Navigate| Housekeeper
+    Landing -->|Navigate| MaintenancePortal
+    Landing -->|Navigate| Kitchen
+
+    Operations -->|REST / JWT| Reception
+    Operations -->|REST / JWT| Housekeeping
+    Operations -->|REST / JWT| RoomService
+    Operations -->|REST / JWT| Maintenance
+    Operations <-->|WebSockets / SignalR| Gateway
+
+    Guest -->|REST / JWT| RoomService
+    Guest -->|REST / JWT| Maintenance
+    Guest <-->|WebSockets / SignalR| Gateway
+
+    %% Events
+    Reception -.->|Publish events| Broker
+    Housekeeping -.->|Publish / Sub| Broker
+    RoomService -.->|Publish events| Broker
+    Maintenance -.->|Publish events| Broker
+    Broker -.->|Forward all events| Gateway
+
+    %% SQLite DB Shared Links
+    Reception === DB
+    Housekeeping === DB
+    RoomService === DB
+    Maintenance === DB
+    Gateway === DB
+```
+
+---
+
+## 2. Microservice Breakdown & Responsibilities
+
+### 1. Reception Service (`HotelOS.Reception` - Port 8001)
+* **Guest Check-In**: Assigns rooms automatically based on guest preferences (type, floor, elevator proximity) using a 6-step FIFO check-in heuristic protected by transactional locks (`SemaphoreSlim`).
+* **Guest Check-Out & Billing**: Computes late fees, room service totals, minibar charges, and active discounts to output final billing previews and invoice checkout receipts.
+* **Staff CRUD & Login**: Manages staff account verification (JWT token issuing based on roles).
+
+### 2. Housekeeping Service (`HotelOS.Housekeeping` - Port 8002)
+* **Cleaning Task Queue**: Tracks pending, in-progress, and finished room cleaning tasks.
+* **Event Broker Subscriber**: Listens for `room.vacated` events to automatically queue a room for cleaning and update its status to `Dirty`.
+* **Reconciliation Loop**: Runs a background loop checking if database room states match active tasks, auto-generating tasks for any unaccounted dirty rooms.
+* **Re-occupancy Preservation**: Checks if a room has an active occupant upon cleaning completion, reverting the room status to `Occupied` instead of `Clean` if a guest is checked in.
+
+### 3. Room Service (`HotelOS.RoomService` - Port 8003)
+* **Food & Beverage Menu**: Details itemized minibar and kitchen orders.
+* **In-Memory FIFO Queue**: Holds active room service orders in a synchronized thread-safe queue.
+* **Status Updates**: Updates order progress (`Received` $\rightarrow$ `Preparing` $\rightarrow$ `Out For Delivery` $\rightarrow$ `Delivered`) and publishes real-time sync events.
+
+### 4. Maintenance Service (`HotelOS.Maintenance` - Port 8004)
+* **Ticket Dispatching**: Manages room repair logs and technician assignments.
+* **Auto-Scheduler**: Schedules pending tickets automatically using an in-memory priority queue (Critical = 1, High = 2, Normal = 3, Low = 4) and handles timestamp-based tie-breakers.
+* **Critical Lockout**: Critical priority tickets automatically change the room's status to `Maintenance`, locking it from reception check-in. Upon resolution, if a guest is currently checked in, the status reverts to `Occupied` (preserving their active session); otherwise, it reverts to `Dirty` to queue cleaning.
+
+### 5. Notification Gateway (`HotelOS.NotificationGateway` - Port 8005)
+* **Real-time Event Streaming**: Subscribes to all events published to Redis Pub/Sub channels and broadcasts them to client portals via WebSockets.
+* **Secure Guest Isolation**: Validates guest JWT claims to ensure rooms cannot listen to neighboring room events. It filters WebSocket events so guest portals only receive messages matching their authenticated room number.
+
+---
+
+## 3. Technology Stack
+
+* **Backend (.NET 8/10)**:
+  * **Framework**: ASP.NET Core Web API (Minimal APIs for performance and conciseness).
+  * **ORM**: Entity Framework Core (EF Core) with SQLite.
+  * **Messaging**: StackExchange.Redis for Pub/Sub asynchronous event communication.
+  * **Real-time**: ASP.NET Core SignalR / WebSockets.
+  * **Authentication**: JWT Bearer Authentication (custom claims for role-based staff isolation and room-based guest isolation).
+* **Frontend**:
+  * React 18, TypeScript, Vite, Vanilla CSS + TailwindCSS, Lucide React Icons, WebSockets.
+  * Arranged in an **npm Workspaces Monorepo** for clean dependency sharing.
+* **Database**:
+  * **SQLite** configured in **WAL (Write-Ahead Logging)** mode with a `5000ms` busy timeout, enabling high-concurrency read-write transactions without locks.
+* **Infrastructure**:
+  * Docker for hosting the Redis container.
+
+---
+
+## 4. Critical Heuristic Algorithms
+
+### Algorithm 1: Room Assignment Check-In
+To prevent double-booking, room assignment runs inside a transactional lock (`SemaphoreSlim`):
+1. **Filter Rooms**: Selects rooms of the requested type (`Single`, `Double`, `Accessible`, `Suite`) that are currently in `"Clean"` status.
+2. **Longest Clean First (FIFO)**: Sorts candidates by `clean_since` timestamp so the room that has been clean the longest is assigned first.
+3. **Floor Preference**: Filters rooms matching the preferred floor. If none are clean, it falls back to any available floor.
+4. **Proximity Preference (Tie-Breaker)**: Order candidates based on proximity criteria (`Near Elevator`, `Near Stairs`, `Away From Elevator`).
+5. **Assign**: Marks the room status as `"Occupied"`, binds the guest ID, and publishes `guest.checked_in` and `room.status_changed` events.
+
+### Algorithm 2: Billing Calculation
+$$\text{Subtotal} = (\text{Nightly Rate} \times \text{Nights}) + \text{Room Service} + \text{Minibar} + (\text{Late Checkout Hours} \times \$20)$$
+$$\text{Discounted Subtotal} = \max(\text{Subtotal} - \text{Discount}, 0)$$
+$$\text{Tax (10\% VAT)} = \text{Discounted Subtotal} \times 0.10$$
+$$\text{Grand Total} = \text{Discounted Subtotal} + \text{Tax}$$
+* Calculates stay nights dynamically on early checkouts (with a 1-night minimum).
+* Supports both percentage and fixed cash discounts.
+
+### Algorithm 3: Maintenance Priority Dispatch
+Schedules tickets in a synchronized list using a custom priority algorithm:
+* **Priority Values**: Critical = 1, High = 2, Normal = 3, Low = 4.
+* **Tie-Breaker**: Sorts by `Priority` first, followed by `CreatedAt` timestamp, and lastly by `IssueId` to ensure older tickets get prioritized if urgency matches.
+* **Technician Loop**: Auto-assigns free technicians (`John`, `Sarah`, `Mike`) to the top ticket when they finish their active jobs.
+
+---
+
+## 5. Execution Guide
+
+### Prerequisites
+* **Docker Desktop**: Must be installed and running.
+* **.NET 8/10 SDK**: Installed.
+* **Node.js**: Version 18+.
+
+### Step 1: Start Redis
+Start the Redis docker container on port `6379`:
+```bash
+docker run --name hotelos-redis -p 6379:6379 -d redis:alpine
+```
+
+### Step 2: Restore and Build the Backend
+From the root of the project, navigate to the `dotnet` folder and build the solution:
+```bash
+cd dotnet
+dotnet build
+```
+
+### Step 3: Launch the Backend Microservices
+Run the PowerShell launcher script to start all 5 microservices in separate terminals:
+```powershell
+powershell -File start_all.ps1
+```
+*(Alternatively, navigate to each service folder inside `dotnet/` and run `dotnet run` manually).*
+
+### Step 4: Run the Frontends
+Navigate back to the root directory, install frontend dependencies, and launch Vite dev servers:
+```bash
+cd ..
+npm install
+npm run dev
+```
+
+The portals will start on the following ports:
+* **Landing Page**: [http://localhost:3002](http://localhost:3002) (Start here to navigate to portals)
+* **Operations Portal (Staff)**: [http://localhost:3000](http://localhost:3000)
+* **Guest Portal**: [http://localhost:3001](http://localhost:3001)
+* **Receptionist Terminal**: [http://localhost:3003](http://localhost:3003)
+* **Housekeeper Dashboard**: [http://localhost:3004](http://localhost:3004)
+* **Maintenance Terminal**: [http://localhost:3005](http://localhost:3005)
+* **Kitchen Portal**: [http://localhost:3006](http://localhost:3006)
+
+---
+
+## 6. Testing Guide
+
+### Running Automated Integration Tests
+An automated test runner is provided to run end-to-end integration scenarios. It verifies check-ins, checkout billing calculations, cleaning timer states, maintenance locking, and double-booking protections.
+
+In a separate terminal, run:
+```bash
+python test_runner.py
+```
+
+### Scenarios Tested
+1. **TS-01**: Guest check-in requesting Double room on Floor 1.
+2. **TS-02**: Checkout calculates correct bill, sets room to `Dirty`, and triggers a housekeeping task.
+3. **TS-03**: Housekeeper starts/completes cleaning (Dirty $\rightarrow$ Being Cleaned $\rightarrow$ Clean).
+4. **TS-04**: Guest places a room service order, validates price calculations, and advances it through the kitchen preparation queue.
+5. **TS-05**: Reporting a Critical maintenance ticket auto-assigns a technician, locks the room under `Maintenance` status, and reverts it to `Dirty` after resolution.
+6. **TS-06**: Proves double-booking transactional safety by running simultaneous check-ins on a single clean room.
+7. **TS-07**: Gracefully blocks check-in with a validation error when no rooms are available.
+8. **TS-08**: Validates check-in request schema values (blocks invalid types, nights out of range, etc.).

@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="HotelOS.Housekeeping/HotelOS.Housekeeping.csproj" />
+  <Project Path="HotelOS.Maintenance/HotelOS.Maintenance.csproj" />
+  <Project Path="HotelOS.NotificationGateway/HotelOS.NotificationGateway.csproj" />
+  <Project Path="HotelOS.Reception/HotelOS.Reception.csproj" />
+  <Project Path="HotelOS.RoomService/HotelOS.RoomService.csproj" />
+  <Project Path="HotelOS.Shared/HotelOS.Shared.csproj" />
+</Solution>

@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+frontend/**/node_modules/
+__pycache__/
+*.pyc
+
+# Production builds
+dist/
+build/
+frontend/**/dist/
+
+# C# build artifacts
+bin/
+obj/
+dotnet/**/bin/
+dotnet/**/obj/
+
+# Local database files
+*.db
+*.db-wal
+*.db-shm
+dotnet/*.db
+dotnet/*.db-wal
+dotnet/*.db-shm
+
+# IDE / Editor folders
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.sln.docstates
+
+# Temporary / OS files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+# Temporary scratch folder
+scratch/
