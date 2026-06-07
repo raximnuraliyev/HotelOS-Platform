@@ -77,26 +77,60 @@ graph TD
 * **Guest Check-In**: Assigns rooms automatically based on guest preferences (type, floor, elevator proximity) using a 6-step FIFO check-in heuristic protected by transactional locks (`SemaphoreSlim`).
 * **Guest Check-Out & Billing**: Computes late fees, room service totals, minibar charges, and active discounts to output final billing previews and invoice checkout receipts.
 * **Staff CRUD & Login**: Manages staff account verification (JWT token issuing based on roles).
+* **API Endpoints**:
+  * `POST /api/reception/login` - Staff login (JWT tokens)
+  * `POST /api/reception/guest/login` - Guest login by credentials (Full Name, Room Number)
+  * `POST /api/reception/guest/login/code` - Guest login by generated booking code
+  * `POST /api/reception/staff` - Create new staff member (Admin-only)
+  * `GET /api/reception/staff` - Get all staff members (Admin-only)
+  * `DELETE /api/reception/staff/{id}` - Delete staff member (Admin-only)
+  * `GET /api/reception/rooms` - Get all rooms with occupant info
+  * `GET /api/reception/guests` - Get all checked-in guests
+  * `POST /api/reception/checkin` - Run the automated room assignment check-in heuristic
+  * `GET /api/reception/checkout/preview` - Preview checkout bill calculation
+  * `POST /api/reception/checkout` - Check out guest, post bill to SQLite, and emit check-out / clean-needed events
+  * `GET /api/reception/audit-logs` - View recent audit logs for receptionist actions
 
 ### 2. Housekeeping Service (`HotelOS.Housekeeping` - Port 8002)
 * **Cleaning Task Queue**: Tracks pending, in-progress, and finished room cleaning tasks.
 * **Event Broker Subscriber**: Listens for `room.vacated` events to automatically queue a room for cleaning and update its status to `Dirty`.
 * **Reconciliation Loop**: Runs a background loop checking if database room states match active tasks, auto-generating tasks for any unaccounted dirty rooms.
 * **Re-occupancy Preservation**: Checks if a room has an active occupant upon cleaning completion, reverting the room status to `Occupied` instead of `Clean` if a guest is checked in.
+* **API Endpoints**:
+  * `GET /api/housekeeping/tasks` - Get list of active and completed housekeeping tasks
+  * `POST /api/housekeeping/tasks/{taskId}/start` - Assign/start a cleaning task (marks room as "Being Cleaned")
+  * `POST /api/housekeeping/tasks/{taskId}/complete` - Finish cleaning task (reverts room to "Clean" if vacant, "Occupied" if checked in)
+  * `POST /api/housekeeping/tasks/room/{roomNumber}/dirty` - Force a room dirty (manually triggered dirty task)
 
 ### 3. Room Service (`HotelOS.RoomService` - Port 8003)
 * **Food & Beverage Menu**: Details itemized minibar and kitchen orders.
 * **In-Memory FIFO Queue**: Holds active room service orders in a synchronized thread-safe queue.
 * **Status Updates**: Updates order progress (`Received` $\rightarrow$ `Preparing` $\rightarrow$ `Out For Delivery` $\rightarrow$ `Delivered`) and publishes real-time sync events.
+* **API Endpoints**:
+  * `POST /api/room-service/order` - Guest orders food (inserts into FIFO thread-safe queue and SQL)
+  * `GET /api/room-service/orders` - Staff list of all orders
+  * `GET /api/room-service/queue` - Retrieve the thread-safe FIFO queue positions
+  * `GET /api/room-service/guest/orders` - View orders specific to a guest (JWT validated)
+  * `POST /api/room-service/orders/{orderId}/status` - Move order through queue stages (`Queued`, `Preparing`, `OutForDelivery`, `Delivered`)
 
 ### 4. Maintenance Service (`HotelOS.Maintenance` - Port 8004)
 * **Ticket Dispatching**: Manages room repair logs and technician assignments.
 * **Auto-Scheduler**: Schedules pending tickets automatically using an in-memory priority queue (Critical = 1, High = 2, Normal = 3, Low = 4) and handles timestamp-based tie-breakers.
 * **Critical Lockout**: Critical priority tickets automatically change the room's status to `Maintenance`, locking it from reception check-in. Upon resolution, if a guest is currently checked in, the status reverts to `Occupied` (preserving their active session); otherwise, it reverts to `Dirty` to queue cleaning.
+* **API Endpoints**:
+  * `POST /api/maintenance/issue` - File room damage/issue ticket
+  * `GET /api/maintenance/issues` - View all tickets
+  * `GET /api/maintenance/room/{roomNumber}/issues` - View tickets for a specific room
+  * `GET /api/maintenance/queue` - Get custom-priority queue of tickets
+  * `POST /api/maintenance/issues/{issueId}/resolve` - Mark ticket as resolved, auto-revert room status, and re-allocate technician
 
 ### 5. Notification Gateway (`HotelOS.NotificationGateway` - Port 8005)
 * **Real-time Event Streaming**: Subscribes to all events published to Redis Pub/Sub channels and broadcasts them to client portals via WebSockets.
 * **Secure Guest Isolation**: Validates guest JWT claims to ensure rooms cannot listen to neighboring room events. It filters WebSocket events so guest portals only receive messages matching their authenticated room number.
+* **API / WebSocket Endpoints**:
+  * `WebSocket /ws` - Main real-time WebSocket connection that validates and streams filtered events to UI portals based on roles/room numbers.
+  * `GET /health` - Health check endpoint
+
 
 ---
 
