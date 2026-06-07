@@ -6,6 +6,12 @@ Write-Host "  HotelOS Microservices Launcher" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
+# Automatically clean up existing dotnet microservice processes to free ports and files
+Write-Host "[CLEANUP] Stopping existing dotnet/VBCSCompiler processes..." -ForegroundColor Yellow
+Stop-Process -Name dotnet -Force -ErrorAction SilentlyContinue
+Stop-Process -Name VBCSCompiler -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 1
+
 $basePath = $PSScriptRoot
 
 # Service definitions
