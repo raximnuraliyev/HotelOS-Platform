@@ -131,6 +131,26 @@ graph TD
   * `WebSocket /ws` - Main real-time WebSocket connection that validates and streams filtered events to UI portals based on roles/room numbers.
   * `GET /health` - Health check endpoint
 
+### Event Catalog (Message Broker Events)
+
+The following table documents all asynchronous events sent over the Redis Pub/Sub `hotel_events` channel:
+
+| Event Name | Publisher Service | Subscriber Service(s) | Payload Structure |
+| :--- | :--- | :--- | :--- |
+| `guest.checked_in` | Reception Service | Notification Gateway | `{ "guest_id": int, "guest_name": string, "reservation_code": string, "room_number": int, "nights": int, "room_type": string, "rate": double }` |
+| `guest.checked_out` | Reception Service | Notification Gateway | `{ "guest_id": int, "guest_name": string, "room_number": int, "grand_total": double }` |
+| `room.vacated` | Reception Service | Housekeeping Service | `{ "room_number": int, "guest_id": int }` |
+| `room.status_changed` | Reception / Housekeeping / Maintenance | Notification Gateway | `{ "room_number": int, "status": string }` |
+| `room.needs_cleaning` | Reception Service | Housekeeping Service | `{ "room_number": int }` |
+| `room.cleaning_started` | Housekeeping Service | Notification Gateway | `{ "room_number": int, "task_id": int, "assigned_housekeeper": string }` |
+| `room.cleaning_completed` | Housekeeping Service | Notification Gateway | `{ "room_number": int, "task_id": int }` |
+| `order.placed` | Room Service | Notification Gateway | `{ "order_id": int, "room_number": int, "item_name": string, "quantity": int, "total_price": double, "status": string, "queue_position": int }` |
+| `order.status_changed` | Room Service | Notification Gateway | `{ "order_id": int, "room_number": int, "item_name": string, "status": string, "queue_position": int }` |
+| `maintenance.issue_created` | Maintenance Service | Notification Gateway | `{ "issue_id": int, "room_number": int, "description": string, "priority": string, "status": string }` |
+| `maintenance.issue_assigned` | Maintenance Service | Notification Gateway | `{ "issue_id": int, "room_number": int, "assigned_technician": string }` |
+| `maintenance.issue_resolved` | Maintenance Service | Notification Gateway | `{ "issue_id": int, "room_number": int }` |
+
+
 
 ---
 
